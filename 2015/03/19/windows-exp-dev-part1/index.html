@@ -42,13 +42,11 @@
   </script>
 
 
-  <title> Th3 B04r </title>
+  <title> Windows Exploit Development —— 第一部分 基础 // Th3 B04r </title>
 </head>
 
 <body>
-  <div class="container one-column 
-   page-home 
-">
+  <div class="container one-column page-post-detail">
     <div class="headband"></div>
 
     <div id="header" class="header">
@@ -121,7 +119,6 @@
           <div id="posts" class="posts-expand">
             
   
-    
 
   <div class="post post-type-normal ">
     <div class="post-header">
@@ -132,9 +129,7 @@
           
           
             
-              <a class="post-title-link" href="/2015/03/19/windows-exp-dev-part1/">
-                Windows Exploit Development —— 第一部分 基础
-              </a>
+              Windows Exploit Development —— 第一部分 基础
             
           
         </h1>
@@ -159,8 +154,7 @@
         
 
         
-          
-            <p>原文地址: <a href="http://www.securitysift.com/windows-exploit-development-part-1-basics/" target="_blank" rel="external">http://www.securitysift.com/windows-exploit-development-part-1-basics/</a> </p>
+          <p>原文地址: <a href="http://www.securitysift.com/windows-exploit-development-part-1-basics/" target="_blank" rel="external">http://www.securitysift.com/windows-exploit-development-part-1-basics/</a> </p>
 <h1 id="Windows_漏洞利用程序开发基础">Windows 漏洞利用程序开发基础</h1><h2 id="预览">预览</h2><p>欢迎来到我的Windows Exploit开发系列的第一部分。在这一部分种我将把涵盖以后章节需要掌握的一些必要内容告知大家，包括一些汇编语法，Windows内存布局，和如何使用调试器等。本章暂时不会涉及特别广泛的关于以上的主体，所以如果你对于汇编没有什么特别经验，或者对本文有任何不懂的地方，我希望你在阅读完本章之后，能够在空余实际阅读下我在本文最后提供的一些参考链接。</p>
 <h2 id="目标">目标</h2><p>这个系列文章主要介绍了如何找到漏洞并编写Exploit，我写这个系列的目标是希望学习安全或者从事IT行业的你们对软件安全能有更多的兴趣，同时能够使用这些技能使一些开源软件更安全。另外声明：如果你想利用这里的知识去看些违法的事情，那么恕我送客！<br>我应该同时提醒大家，我的这些文章不算是完整全面的教程，你可以通过 <a href="https://www.corelan.be/index.php/2009/07/19/exploit-writing-tutorial-part-1-stack-based-overflows/" target="_blank" rel="external">Corelan Team</a>  , <a href="http://www.thegreycorner.com/" target="_blank" rel="external">The Grey Corner</a> 和 <a href="http://www.fuzzysecurity.com/tutorials.html" target="_blank" rel="external">Fuzzy Security</a> 来获得更多例子，我强烈建议大家去关注下！</p>
 <h2 id="你需要准备些什么">你需要准备些什么</h2><p>这里有你需要准备的东西的一个清单：</p>
@@ -221,7 +215,6 @@
 <h4 id="栈帧和函数">栈帧和函数</h4><p>当一个程序的函数执行时，单个栈帧被创建用于存储本地变量。每一个函数都会有其自己的栈帧，这是放在当前栈，使栈从低地址向上生长。<br>每次一个栈帧被创建，一些列的操作执行来存储函数的参数和返回地址（简称保存现场，这样程序就知道当函数执行结束的时候返回到哪儿继续运行），保存当前栈的基址指针，然后恢复本地变量所要的空间（SUB操作）【注：我有意的忽略了异常处理，这将会后面才讨论】<br>然我看下这个简短的代码片段，来理解它是如何运作的（可以在 <a href="http://en.wikipedia.org/wiki/Stack_buffer_overflow" target="_blank" rel="external">http://en.wikipedia.org/wiki/Stack_buffer_overflow</a> 找到）：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/c26a7aa835321509ba9d9f64aeae433e.png" alt=""><br>这段代码调用了foo()这个函数，传入单一的命令行参数（argv[1]）。函数foo()将会定义一个长度为12的变量c，它提供了足够多的空间在栈上保存argv[1]。然后调用strcpy()函数拷贝argv[1]的值到变量c。在注释上，这里没有其他的措施来检查长度，这将导致缓冲区溢出，我将在Part2中展示给大家。现在，只让我们把目光聚集在函数是如何影响栈的。<br>我编译这个C程序（stack_demo.exe）使用vs2010命令行来演示其如何正确的在调试器中跑起来。你可以按F3来选择你的可执行文件，并在参数那行输入一些参数<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/7c96627cbb469d028cf3570b2b24537b.png" alt=""><br>在这个例子中，我使用了11个A来作为argv[1]的值【我们将会在Part2看到这超过11会有神马现象发生】<br>如果你想跟清整个流程，也许需要使用断点。从地址开始变化其，但是最好的方式是找到我们程序的真实代码部分，你可以使用alt + E。然后双击stack_demo.exe模块（随便你是怎么命名的exe文件）<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/c27a1e88ab0d0f5dd6b21b58a89b80b5.png" alt=""><br>将会有如下变化：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/4c24fcfa5f01f9bc38ed59e704a39c46.png" alt=""><br>第一行你可以看见这是foo()函数的开始，但是我们首先应该看main()函数。我已经设置了几个断点来帮助我们浏览整个代码段(蓝色高亮部分)，并且你也可以选择一个特定地址，通过F2来下断点。我们看一眼main()函数…<br>尽管main()函数没有做其他任何事情，除了调用foo()函数之外，但是这里仍然有很多事情，是必须先要做的，你能在调试器中看到。首先，它push了argv[1]参数(这里是11个A）到栈上。然后，当foo()函数被调用时，它返回地址被保存在栈中，所以当程序执行完foo()函之后又能跳回来继续执行。<br>我们看以下截图，这里我做了一些注释，仅仅关注红色线框标注的哪部分就好了。我将盖住一些其他的指令。在foo()函数被调用之前，你可以看到一个指针指向argv[1]被push到栈上了。然后CALL指令被执行，返回地址指向下一条指令(EIP+4)，这个同时也被push到了栈。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/86c7f5dc7c6bf33b3be6b4effd142167.png" alt=""><br>如果你想证明0033FD4地址包含0033301C是一个指向argv[1]的指针，只需要看下dump的内容的地址就知道了(这里也没翻译好）<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/faba3a683c22a488cb4539b392abf087.png" alt=""><br>你能看到一些值被倒过来写1C30300.让我们抓住这次机会来快速看一眼小端字节序。”端”指的是内存中各字节排列的顺序。Intel X86 架构是以小端序来排列的，其存储一个值，在最小的内存地址 （这就是为什么的地址以相反的顺序存储） 的最低有效字节。举一个例子，指向前面的16进制dump截图 —— 是最小的顶部 （00332FD4） 地址和地址在底部 （00333034） 是最大。因此中左上角, 的字节 （目前占用 1 C） 占用的最小的地址位置和地址获得更大的当您移动左到右，从上到下。当你看着地址 0033301C 时，最低有效字节是一路向右 (1c) 字节。将其转换为小端字节序符号你重新排序它，一次一个字节从右到左。这里是一个虚拟演示：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/c22447bcd844e05a8c1f99fffc17bcba.png" alt=""><br>OK，所以argv[1]和返回地址现在已经被push到了栈，并且foo()也被调用了。这里高亮部分可以看下:<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/9519f8d6fa885dbd56116601f361e753.png" alt=""><br>标注指针指向argv[1]的地址0012FF74，且右上的它存储了RETURN（返回值）.如果你回顾下前面关于main()函数的截图，你将会发现返回地址0040103F就是指向下一条指令，在foo()函数被调用滞后，这就是当foo()结束后，程序会返回到继续执行的地方。<br>现在我们来看下foo()函数:<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/8ef548b1e2f7d22586126d06a04b32d0.png" alt=""><br>一旦foo()函数被调用，首先会发生的是，当前基地址指针（EBP)被保存到栈，通过PUSH EBP指令。所以一旦被调用的函数终止，main()函数就能回到原来调用的地方继续运行。<br>接下来，EBP被设定为与ESP相同(通过MOV EBP,ESP指令)，这使得栈底部和顶部的栈帧相同。从这里，EBP将会保持位一个常量(foo()函数的生命周期），并且ESP 将升到较低的地址，把数据添加到该函数的堆栈帧。这里是之前和之后显示 EBP 现在等于 ESP 寄存器的视图。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/4cb756064fd0fa5df6b00b6c2774141a.png" alt=""><br>然后，为本地变量 c 保留一部分空间 （char c[12]) 通过下面的指令： SUB ESP，10。<br>这里是一些列指令执行后的栈视图：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/b4a4cb73e061c3c6a82e7ecacff4a44a.png" alt=""><br>请注意栈顶（ESP的结果)是如何从0012FF6C到0012FF5C改变的。<br>我们一直执行到strcpy()函数被调用，其将会拷贝argb[1]的值(这里是好多个A)到一个段为变量C预留好的空间(在栈上)。这里是函数执行在调试器中的情况，我只强调了执行堆栈写入的部分。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/90fad1370c387d159eb6ce726753955e.png" alt=""><br>您会注意到在下面的屏幕截图它继续遍历 argv [1] 的值，直到所有 argv [1] （从顶部到底部的预留空间) 堆栈上保留的空间写入写入堆栈。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/bf67670c362bb66bb7a4e26e50bb07c7.png" alt=""><br>我们看看堆栈函数终止的时候会发生什么之前，这里是另一个一步一步的视觉加强函数 foo () 调用时所采取的步骤。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/775a2e78ac5945c76b6fe95f9a654616.png" alt=""><br>Strcpy () 已完成并准备终止函数 foo () 后，一些清理已发生在堆栈上。让我们看看堆栈以及 foo () 准备终止程序的执行翻回至main()。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/672c99f7a18514b9895796815016bfb0.png" alt=""><br>正如你所看到的执行的第一个指令是MV ESP,EBP 的值，所以它现在指向 0012FF6C，并有效地从堆栈中移除变量 c (AAAAAAAAAAA) 的 EBP MOV ESP。堆栈的顶部现在包含已保存的 EBP：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/4f88c9dfaf907d3cc06d2f669c417479.png" alt=""><br>当下一条指令，POP EBP被执行的时候，它将恢复之前的栈基地址指针，从main()函数，并且ESP的值加4。栈指针现在指向的RETURN(返回地址)的值被放置到栈右前foo()函数调用的返回值。当RETN指令执行，它将程序执行流程弄回到main()函数中的下一条，既是foo()函数调用的下一句，如下截图所示:<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/340f370ac28a55c98b18e1a9b4f2b86d.png" alt=""><br>函数main() 可以通过移动堆栈指针在堆栈 （通过增加其价值 4） 和清理堆栈的 argv [1] 来执行他们自己的清理。它将清除该登记册，它用来存储 argv [1] （EAX） 通过 XOR、 还原已保存EBP，然后返回到保存的返回地址。<br>这应该是足够的快速上手了，虽然理解函数的堆栈框架创建已删除和如何地方的变量存储到堆栈上。如果你想要更多的例子，我鼓励您阅读其他很棒的教程 （尤其是 Corelan 小组发表的）。</p>
 <h3 id="结论">结论</h3><p>就那些~</p>
 
-          
         
       </div>
     
@@ -231,141 +224,31 @@
         
 
         
+          <div class="post-nav">
+            <div class="post-nav-prev post-nav-item">
+              
+            </div>
+
+            <div class="post-nav-next post-nav-item">
+              
+                <a href="/2015/03/18/about-the-blog/">关于这个Blog</a>
+              
+            </div>
+          </div>
+        
 
         
-        
-          <div class="post-eof"></div>
         
       </div>
     
   </div>
+
 
 
   
-    
-
-  <div class="post post-type-normal ">
-    <div class="post-header">
-
+    <div class="comments" id="comments">
       
-      
-        <h1 class="post-title">
-          
-          
-            
-              <a class="post-title-link" href="/2015/03/18/about-the-blog/">
-                关于这个Blog
-              </a>
-            
-          
-        </h1>
-      
-
-      <div class="post-meta">
-        <span class="post-time">
-          
-            发表于 2015-03-18
-          
-        </span>
-        
-          
-        
-      </div>
     </div>
-
-    
-      <div class="post-body">
-
-        
-        
-
-        
-          
-            <p>这个Blog是我们团队发表一些自己原创文章的地方，如果你喜欢可以选择订阅。本Blog基于Hexo，所以在这篇文章中主要介绍一些关于Hexo的配置及使用技巧。</p>
-<p>引用：<br><a href="http://zipperary.com/categories/hexo/" target="_blank" rel="external">http://zipperary.com/categories/hexo/</a></p>
-
-          
-        
-      </div>
-    
-
-    
-      <div class="post-footer">
-        
-
-        
-
-        
-        
-          <div class="post-eof"></div>
-        
-      </div>
-    
-  </div>
-
-
-  
-    
-
-  <div class="post post-type-normal ">
-    <div class="post-header">
-
-      
-      
-        <h1 class="post-title">
-          
-          
-            
-              <a class="post-title-link" href="/2015/03/18/we-are-the-boar/">
-                We are the BOAR !
-              </a>
-            
-          
-        </h1>
-      
-
-      <div class="post-meta">
-        <span class="post-time">
-          
-            发表于 2015-03-18
-          
-        </span>
-        
-          
-        
-      </div>
-    </div>
-
-    
-      <div class="post-body">
-
-        
-        
-
-        
-          
-            <h1 id="野猪团队">野猪团队</h1><p>几个信息安全从业者利用业余时间组织起来的团队。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/311ab6a02c00e57e0881f96e63c6673a.jpg" alt="logo"> </p>
-
-          
-        
-      </div>
-    
-
-    
-      <div class="post-footer">
-        
-
-        
-
-        
-        
-          <div class="post-eof"></div>
-        
-      </div>
-    
-  </div>
-
-
   
 
           </div>
@@ -385,6 +268,15 @@
 <div id="sidebar" class="sidebar">
   <div class="sidebar-inner">
 
+    
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview" data-target="site-overview">
+          站点概览
+        </li>
+      </ul>
     
 
     <div class="site-overview">
@@ -431,6 +323,14 @@
 
     </div>
 
+    
+      <div class="post-toc-wrap sidebar-panel-active">
+        <div class="post-toc-indicator-top post-toc-indicator"></div>
+        <div class="post-toc">
+          <ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Windows_漏洞利用程序开发基础"><span class="nav-number">1.</span> <span class="nav-text">Windows 漏洞利用程序开发基础</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#预览"><span class="nav-number">1.1.</span> <span class="nav-text">预览</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#目标"><span class="nav-number">1.2.</span> <span class="nav-text">目标</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#你需要准备些什么"><span class="nav-number">1.3.</span> <span class="nav-text">你需要准备些什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Immunity_Debugger_使用入门"><span class="nav-number">1.4.</span> <span class="nav-text">Immunity Debugger 使用入门</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#CPU寄存器"><span class="nav-number">1.4.1.</span> <span class="nav-text">CPU寄存器</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#EAX_——_累加寄存器"><span class="nav-number">1.4.1.1.</span> <span class="nav-text">EAX —— 累加寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#EBC_——_基址寄存器"><span class="nav-number">1.4.1.2.</span> <span class="nav-text">EBC —— 基址寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ECX_——_计数寄存器"><span class="nav-number">1.4.1.3.</span> <span class="nav-text">ECX —— 计数寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#EDX_——_数据寄存器"><span class="nav-number">1.4.1.4.</span> <span class="nav-text">EDX —— 数据寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ESI_——_来源寄存器"><span class="nav-number">1.4.1.5.</span> <span class="nav-text">ESI —— 来源寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#EDI_——_目标寄存器"><span class="nav-number">1.4.1.6.</span> <span class="nav-text">EDI —— 目标寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#EBP_——_基址指针寄存器"><span class="nav-number">1.4.1.7.</span> <span class="nav-text">EBP —— 基址指针寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ESP_——_栈指针寄存器"><span class="nav-number">1.4.1.8.</span> <span class="nav-text">ESP —— 栈指针寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#EIP_——_指令指针寄存器"><span class="nav-number">1.4.1.9.</span> <span class="nav-text">EIP —— 指令指针寄存器</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#段寄存器（Segment_Register）和EF标志位寄存器（EFFLAGS_Register）"><span class="nav-number">1.4.1.10.</span> <span class="nav-text">段寄存器（Segment Register）和EF标志位寄存器（EFFLAGS Register）</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#内存Dump"><span class="nav-number">1.5.</span> <span class="nav-text">内存Dump</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#CPU指令集"><span class="nav-number">1.5.1.</span> <span class="nav-text">CPU指令集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Windows内存布局"><span class="nav-number">1.5.2.</span> <span class="nav-text">Windows内存布局</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#内核区域（Kernel_Land）"><span class="nav-number">1.5.2.1.</span> <span class="nav-text">内核区域（Kernel Land）</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#PEB和TEB"><span class="nav-number">1.5.2.2.</span> <span class="nav-text">PEB和TEB</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Dlls"><span class="nav-number">1.5.2.3.</span> <span class="nav-text">Dlls</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#程序基址"><span class="nav-number">1.5.2.4.</span> <span class="nav-text">程序基址</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#堆"><span class="nav-number">1.5.2.5.</span> <span class="nav-text">堆</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#栈"><span class="nav-number">1.5.3.</span> <span class="nav-text">栈</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#PUSH操作和POP操作"><span class="nav-number">1.5.3.1.</span> <span class="nav-text">PUSH操作和POP操作</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#栈帧和函数"><span class="nav-number">1.5.3.2.</span> <span class="nav-text">栈帧和函数</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#结论"><span class="nav-number">1.5.4.</span> <span class="nav-text">结论</span></a></li></ol></li></ol></li></ol>
+        </div>
+        <div class="post-toc-indicator-bottom post-toc-indicator"></div>
+      </div>
     
 
   </div>
@@ -513,17 +413,6 @@
   <script type="text/javascript" src="/vendors/velocity/velocity.ui.min.js"></script>
 
   
-  <script type="text/javascript" id="motion.page.home">
-    $(document).ready(function () {
-      $.Velocity.RunSequence([
-        { e: $('.brand'), p: { opacity: 1 }, o: { duration: 100 } },
-        { e: $('.logo'), p: { opacity: 1, top: 0 }, o: { duration: 50} },
-        { e: $('.site-title'), p: { opacity: 1, top: 0 }, o: { duration: 200, sequenceQueue: false } }
-      ]);
-      $('.menu-item').velocity('transition.slideDownIn', {display: null});
-    });
-  </script>
-
 
   <script type="text/javascript" id="motion.global">
   $(document).ready(function () {
@@ -643,6 +532,327 @@
 
 
   
+  
+<script type="text/javascript" id="bootstrap.scrollspy.custom">
+  /* ========================================================================
+  * Bootstrap: scrollspy.js v3.3.2
+  * http://getbootstrap.com/javascript/#scrollspy
+  * ========================================================================
+  * Copyright 2011-2015 Twitter, Inc.
+  * Licensed under MIT (https://github.com/twbs/bootstrap/blob/master/LICENSE)
+  * ======================================================================== */
+
+  /**
+   * Custom by iissnan
+   *
+   * - Add a `clear.bs.scrollspy` event.
+   * - Esacpe targets selector.
+   */
+
+
+  +function ($) {
+    'use strict';
+
+    // SCROLLSPY CLASS DEFINITION
+    // ==========================
+
+    function ScrollSpy(element, options) {
+      this.$body          = $(document.body)
+      this.$scrollElement = $(element).is(document.body) ? $(window) : $(element)
+      this.options        = $.extend({}, ScrollSpy.DEFAULTS, options)
+      this.selector       = (this.options.target || '') + ' .nav li > a'
+      this.offsets        = []
+      this.targets        = []
+      this.activeTarget   = null
+      this.scrollHeight   = 0
+
+      this.$scrollElement.on('scroll.bs.scrollspy', $.proxy(this.process, this))
+      this.refresh()
+      this.process()
+    }
+
+    ScrollSpy.VERSION  = '3.3.2'
+
+    ScrollSpy.DEFAULTS = {
+      offset: 10
+    }
+
+    ScrollSpy.prototype.getScrollHeight = function () {
+      return this.$scrollElement[0].scrollHeight || Math.max(this.$body[0].scrollHeight, document.documentElement.scrollHeight)
+    }
+
+    ScrollSpy.prototype.refresh = function () {
+      var that          = this
+      var offsetMethod  = 'offset'
+      var offsetBase    = 0
+
+      this.offsets      = []
+      this.targets      = []
+      this.scrollHeight = this.getScrollHeight()
+
+      if (!$.isWindow(this.$scrollElement[0])) {
+        offsetMethod = 'position'
+        offsetBase   = this.$scrollElement.scrollTop()
+      }
+
+      this.$body
+        .find(this.selector)
+        .map(function () {
+          var $el   = $(this)
+          var href  = $el.data('target') || $el.attr('href')
+          var $href = /^#./.test(href) && $(escapeSelector(href)) // Need to escape selector.
+
+          return ($href
+            && $href.length
+            && $href.is(':visible')
+            && [[$href[offsetMethod]().top + offsetBase, href]]) || null
+        })
+        .sort(function (a, b) { return a[0] - b[0] })
+        .each(function () {
+          that.offsets.push(this[0])
+          that.targets.push(this[1])
+        })
+
+
+    }
+
+    ScrollSpy.prototype.process = function () {
+      var scrollTop    = this.$scrollElement.scrollTop() + this.options.offset
+      var scrollHeight = this.getScrollHeight()
+      var maxScroll    = this.options.offset + scrollHeight - this.$scrollElement.height()
+      var offsets      = this.offsets
+      var targets      = this.targets
+      var activeTarget = this.activeTarget
+      var i
+
+      if (this.scrollHeight != scrollHeight) {
+        this.refresh()
+      }
+
+      if (scrollTop >= maxScroll) {
+        return activeTarget != (i = targets[targets.length - 1]) && this.activate(i)
+      }
+
+      if (activeTarget && scrollTop < offsets[0]) {
+        $(this.selector).trigger('clear.bs.scrollspy')  // Add a custom event.
+        this.activeTarget = null
+        return this.clear()
+      }
+
+      for (i = offsets.length; i--;) {
+        activeTarget != targets[i]
+          && scrollTop >= offsets[i]
+          && (!offsets[i + 1] || scrollTop <= offsets[i + 1])
+          && this.activate(targets[i])
+      }
+    }
+
+    ScrollSpy.prototype.activate = function (target) {
+      this.activeTarget = target
+
+      this.clear()
+
+      var selector = this.selector +
+        '[data-target="' + target + '"],' +
+        this.selector + '[href="' + target + '"]'
+
+      var active = $(selector)
+        .parents('li')
+        .addClass('active')
+
+      if (active.parent('.dropdown-menu').length) {
+        active = active
+          .closest('li.dropdown')
+          .addClass('active')
+      }
+
+      active.trigger('activate.bs.scrollspy')
+    }
+
+    ScrollSpy.prototype.clear = function () {
+      $(this.selector)
+        .parentsUntil(this.options.target, '.active')
+        .removeClass('active')
+    }
+
+
+    // SCROLLSPY PLUGIN DEFINITION
+    // ===========================
+
+    function Plugin(option) {
+      return this.each(function () {
+        var $this   = $(this)
+        var data    = $this.data('bs.scrollspy')
+        var options = typeof option == 'object' && option
+
+        if (!data) $this.data('bs.scrollspy', (data = new ScrollSpy(this, options)))
+        if (typeof option == 'string') data[option]()
+      })
+    }
+
+    var old = $.fn.scrollspy
+
+    $.fn.scrollspy             = Plugin
+    $.fn.scrollspy.Constructor = ScrollSpy
+
+
+    // SCROLLSPY NO CONFLICT
+    // =====================
+
+    $.fn.scrollspy.noConflict = function () {
+      $.fn.scrollspy = old
+      return this
+    }
+
+
+    // SCROLLSPY DATA-API
+    // ==================
+
+    $(window).on('load.bs.scrollspy.data-api', function () {
+      $('[data-spy="scroll"]').each(function () {
+        var $spy = $(this)
+        Plugin.call($spy, $spy.data())
+      })
+    })
+
+  }(jQuery);
+</script>
+
+
+<script type="text/javascript" id="sidebar.toc.highlight">
+  $(document).ready(function () {
+    var tocSelector = '.post-toc';
+    var $tocSelector = $(tocSelector);
+    var activeCurrentSelector = '.active-current';
+
+    $tocSelector
+      .on('activate.bs.scrollspy', function () {
+        var $currentActiveElement = $(tocSelector + ' .active').last();
+
+        removeCurrentActiveClass();
+        $currentActiveElement.addClass('active-current');
+
+        $tocSelector[0].scrollTop = $currentActiveElement.position().top;
+      })
+      .on('clear.bs.scrollspy', function () {
+        removeCurrentActiveClass();
+      });
+
+    function removeCurrentActiveClass () {
+      $(tocSelector + ' ' + activeCurrentSelector)
+        .removeClass(activeCurrentSelector.substring(1));
+    }
+
+    function processTOC () {
+      getTOCMaxHeight();
+      toggleTOCOverflowIndicators();
+    }
+
+    function getTOCMaxHeight () {
+      var $sidebarInner = $('.sidebar-inner');
+      var height = $('.sidebar').height() -
+                   $tocSelector.position().top -
+                   $('.post-toc-indicator-bottom').height();
+
+      $tocSelector.css('height', height);
+
+      return height;
+    }
+
+    function toggleTOCOverflowIndicators () {
+      tocOverflowIndicator(
+        '.post-toc-indicator-top',
+        $tocSelector.scrollTop() > 0 ? 'show' : 'hide'
+      );
+
+      tocOverflowIndicator(
+        '.post-toc-indicator-bottom',
+        $tocSelector.scrollTop() >= $tocSelector.find('ol').height() - $tocSelector.height() ? 'hide' : 'show'
+      )
+    }
+
+    $(document).on('sidebar.didShow', function () {
+      processTOC();
+    });
+
+    $('body').scrollspy({ target: tocSelector });
+    $(window).on('resize', function () {
+      if ( $('.sidebar').hasClass('sidebar-active') ) {
+        processTOC();
+      }
+    });
+
+    onScroll($tocSelector);
+
+    function onScroll (element) {
+      element.on('mousewheel DOMMouseScroll', function (event) {
+          var oe = event.originalEvent;
+          var delta = oe.wheelDelta || -oe.detail;
+          var self = this;
+
+          this.scrollTop += ( delta < 0 ? 1 : -1 ) * 30;
+          event.preventDefault();
+
+          toggleTOCOverflowIndicators();
+      });
+    }
+
+    function tocOverflowIndicator (indicator, action) {
+      $(indicator).velocity('stop').velocity({
+        opacity: action === 'show' ? 0.4 : 0
+      }, { duration: 100 });
+    }
+
+  });
+</script>
+
+
+  <script type="text/javascript" id="sidebar.nav">
+    $(document).ready(function () {
+      var html = $('html');
+
+      $('.sidebar-nav li').on('click', function () {
+        var item = $(this);
+        var activeTabClassName = 'sidebar-nav-active';
+        var activePanelClassName = 'sidebar-panel-active';
+        if (item.hasClass(activeTabClassName)) {
+          return;
+        }
+
+        var currentTarget = $('.' + activePanelClassName);
+        var target = $('.' + item.data('target'));
+
+        currentTarget.velocity('transition.slideUpOut', 200, function () {
+          target
+            .velocity('stop')
+            .velocity('transition.slideDownIn', 200)
+            .addClass(activePanelClassName);
+        });
+
+        item.siblings().removeClass(activeTabClassName);
+        item.addClass(activeTabClassName);
+      });
+
+      $('.post-toc a').on('click', function (e) {
+        e.preventDefault();
+        var offset = $(escapeSelector(this.getAttribute('href'))).offset().top;
+        html.velocity('stop').velocity('scroll', {
+          offset: offset  + 'px',
+          mobileHA: false
+        });
+      });
+
+      // Expand sidebar on post detail page by default, when post has a toc.
+      if ($('.post-toc').html().trim().length > 0 && isDesktop()) {
+        setTimeout(function () {
+          $('.sidebar-toggle').trigger('click');
+        }, 800);
+      }
+    });
+  </script>
+
+
+
 
   
 
