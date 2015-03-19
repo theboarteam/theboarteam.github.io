@@ -154,7 +154,7 @@
         
 
         
-          <p>原文地址: <a href="http://www.securitysift.com/windows-exploit-development-part-1-basics/" target="_blank" rel="external">http://www.securitysift.com/windows-exploit-development-part-1-basics/</a> </p>
+          <p>原文地址: <a href="http://www.securitysift.com/windows-exploit-development-part-1-basics/" target="_blank" rel="external">http://www.securitysift.com/windows-exploit-development-part-1-basics/</a><br><a id="more"></a> </p>
 <h1 id="Windows_漏洞利用程序开发基础">Windows 漏洞利用程序开发基础</h1><h2 id="预览">预览</h2><p>欢迎来到我的Windows Exploit开发系列的第一部分。在这一部分种我将把涵盖以后章节需要掌握的一些必要内容告知大家，包括一些汇编语法，Windows内存布局，和如何使用调试器等。本章暂时不会涉及特别广泛的关于以上的主体，所以如果你对于汇编没有什么特别经验，或者对本文有任何不懂的地方，我希望你在阅读完本章之后，能够在空余实际阅读下我在本文最后提供的一些参考链接。</p>
 <h2 id="目标">目标</h2><p>这个系列文章主要介绍了如何找到漏洞并编写Exploit，我写这个系列的目标是希望学习安全或者从事IT行业的你们对软件安全能有更多的兴趣，同时能够使用这些技能使一些开源软件更安全。另外声明：如果你想利用这里的知识去看些违法的事情，那么恕我送客！<br>我应该同时提醒大家，我的这些文章不算是完整全面的教程，你可以通过 <a href="https://www.corelan.be/index.php/2009/07/19/exploit-writing-tutorial-part-1-stack-based-overflows/" target="_blank" rel="external">Corelan Team</a>  , <a href="http://www.thegreycorner.com/" target="_blank" rel="external">The Grey Corner</a> 和 <a href="http://www.fuzzysecurity.com/tutorials.html" target="_blank" rel="external">Fuzzy Security</a> 来获得更多例子，我强烈建议大家去关注下！</p>
 <h2 id="你需要准备些什么">你需要准备些什么</h2><p>这里有你需要准备的东西的一个清单：</p>
