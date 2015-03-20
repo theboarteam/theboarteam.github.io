@@ -42,7 +42,7 @@
   </script>
 
 
-  <title> 关于这个Blog // Th3 B04r </title>
+  <title> Windows Exploit Development —— 第二部分 栈溢出 // Th3 B04r </title>
 </head>
 
 <body>
@@ -129,7 +129,7 @@
           
           
             
-              关于这个Blog
+              Windows Exploit Development —— 第二部分 栈溢出
             
           
         </h1>
@@ -138,7 +138,7 @@
       <div class="post-meta">
         <span class="post-time">
           
-            发表于 2015-03-18
+            发表于 2015-03-20
           
         </span>
         
@@ -154,8 +154,23 @@
         
 
         
-          <p>这个Blog是我们团队发表一些自己原创文章的地方，如果你喜欢可以选择订阅。本Blog基于Hexo，所以在这篇文章中主要介绍一些关于Hexo的配置及使用技巧。</p>
-<p>引用：<br><a href="http://zipperary.com/categories/hexo/" target="_blank" rel="external">http://zipperary.com/categories/hexo/</a></p>
+          <p>原文地址: <a href="http://www.securitysift.com/windows-exploit-development-part-2-intro-stack-overflow/" target="_blank" rel="external">http://www.securitysift.com/windows-exploit-development-part-2-intro-stack-overflow/</a><br><a id="more"></a> </p>
+<h1 id="Windows_漏洞利用程序开发之栈溢出">Windows 漏洞利用程序开发之栈溢出</h1><p>欢迎来到我的Windows开发开发系列的第2部分。在第1部分中,我介绍一些用于理解第2部分的基本概念。如果你还没有这样完成第一部分的阅读,我建议至少粗略浏览第一篇文章,充分理解里面列出的概念。在这些知识的基础上,现在我想谈谈一个人人皆知的基于windows的软件漏洞:基于堆栈缓冲区溢出。</p>
+<h2 id="关于栈缓冲区溢出">关于栈缓冲区溢出</h2><p>在这一章我将从维基百科的简单程序开始介绍，你可以从<a href="http://en.wikipedia.org/wiki/Stack_buffer_overflow" target="_blank" rel="external">这里</a> 下载。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/c26a7aa835321509ba9d9f64aeae433e.png" alt=""><br>在第1部分中,我回避了一个事实,传递一个大于11字符的参数到strcpy()函数，会由于缺乏边界检查导致缓冲区溢出。让我们看看这意味着什么。回忆一下，strcpy()写argv[1]用户栈的输入如下:<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/bf67670c362bb66bb7a4e26e50bb07c7.png" alt=""><br>如果输入不超过12个字符就不会出现问题(在foo函数中分配给变量c的堆栈大小为12),但如果输入超过11个字符,strcpy()将继续输入堆栈,不顾分配空间的大小。(注: 输入字符的限制是11而不是12（变量大小是12),是因为你必须为字符串结束符自动分配空间。）</p>
+<p>举个例子,如果我们用150的参数（150 A’s）运行这个程序，会得到这样的结果:<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/11c28b769e97c692ff16029e9f4cdbd0.png" alt=""><br>如你所见,strcpy()覆盖所有的基本指针(保存EBP)和返回地址(保存EIP)argv[1]。注意:不要担心指针指到下一个医师记录和SE处理程序——我随后会修复。现在当程序转移执行保存的EIP的地址,它将试图跟随41414141(AAAA级),提高和错误/异常。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/d6e14570caa6d0ba25fe2b1c205deb93.png" alt=""><br>再者，因为strcpy()没有进行边界检查，所以给变量C分配的空间也没有有效性验证，这将导致把argv[1]整个都写入到栈里直到栈被填满。由于本地变量写入栈上面保存的返回地址和其他重要数据，而且 argv [1] 是写到栈底的，EIP 将被覆盖成如下图所示：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/beac9e3ca8ed4795e6986c096ba85a2b.png" alt=""><br>由于我们（用户）对传递给程序的参数有完全的控制权，感谢栈溢出，现在我们同样对EIP有了完全的控制权，程序的执行流程亦然。那意味着我们能够重新定向程序内部的代码执行流向 —— 这是一个简单的栈溢出示例。让我们瞅一眼在实际程序种找到一个栈溢出漏洞吧。</p>
+<h2 id="找到有漏洞的程序">找到有漏洞的程序</h2><p>我们有机会查看Exp-Db（<a href="http://www.exploit-db.com/）一个包含各种程序的Exp并且可下载的漏洞档案站点。它有很多关于Exp开发的资源，同样你也可以提交自己的Exp到站点上。在以后的文章中，我们将讨论如何找到你自己程序的Exp。但在这里我们先演示个一个已经存在漏洞的吧～" target="_blank" rel="external">http://www.exploit-db.com/）一个包含各种程序的Exp并且可下载的漏洞档案站点。它有很多关于Exp开发的资源，同样你也可以提交自己的Exp到站点上。在以后的文章中，我们将讨论如何找到你自己程序的Exp。但在这里我们先演示个一个已经存在漏洞的吧～</a><br>在本例中，我将演示这个漏洞（<a href="http://www.exploit-db.com/exploits/8407/）。查看以下Exp-db上的笔记，其写到EIP被覆盖（41414141）在打开了一个音乐列表文件（.m3u）后，这个文件包含&quot;http://" target="_blank" rel="external">http://www.exploit-db.com/exploits/8407/）。查看以下Exp-db上的笔记，其写到EIP被覆盖（41414141）在打开了一个音乐列表文件（.m3u）后，这个文件包含&quot;http://</a>“ + 26,121个A。因为这是个POC，它实际上不会真正自由执行我们构造的恶意代码（只引起程序崩溃）。同样笔记写到这个POC并不是对任意版本都有效，它跑在Windows XP SP2 法文版上，这意味着我们在其他的操作系统上执行可能会看到不同结果。不管那么多，让我们下载ASX to MP3 Converter ver 3.0.0.7（<a href="http://asx-to-mp3-converter.en.softonic.com/）然后先在Windows" target="_blank" rel="external">http://asx-to-mp3-converter.en.softonic.com/）然后先在Windows</a> XP SP3安装它吧。</p>
+<h2 id="复现漏洞/崩溃">复现漏洞/崩溃</h2><p>接下来，我们开始构造我们自己的Exp，调试程序的崩溃。我将用Perl来写这个Exp。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/21d99188e0c6eb877ac940381ae6e44c.png" alt=""><br>你可以看到，Perl脚本建立了一个m3u文件包含5000个A(41就是A的16进制值，查看ascii表 <a href="http://www.asciitable.com/）。注意到我们现在构造的这个m3u文件，在原POC包含“http://”这串字符已经不再是必要的了，尽管有些" target="_blank" rel="external">http://www.asciitable.com/）。注意到我们现在构造的这个m3u文件，在原POC包含“http://”这串字符已经不再是必要的了，尽管有些</a> m3u 基于利用漏洞攻击都需要做类似的位置/路径构造工作。你可以研究下一个有效的m3u文件的内容和文件头就会知道这为啥可以这样了。此外注意这类Exp，m3u漏洞利用文件的路径保存了影响最终EIP覆盖，所以确定Exp文件的名称与我例子中的相同（asx2mp3.m3u），并且将它保存到C盘的根目录，在你打开ASXtoMP3Converter之前～<br>运行Perl脚本（perl asx2mp3.perl）来产生m3u溢出文件，并保存到目标机器的C盘根目录，然后打开ASX to MP3 Converter程序，附加到ImDbg（同时确定按F9把程序跑起来）<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/60960f34df42ce06e00eaccc5b3e2bdc.png" alt=""><br>用这个软件打开asx2mp3.m3u（可以拖拽），你会马上看到程序崩溃了，并且在ImDbg中可以看到EIP已经被覆盖。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/defccc4a8b167738d1df8077ca1cdeb8.png" alt=""><br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/a47b057868ebf9e105a7d976ae69154a.png" alt=""> </p>
+<h2 id="控制EIP的覆盖（确定偏移地址）">控制EIP的覆盖（确定偏移地址）</h2><p>OK，我们确认了POC确实可以引起程序崩溃。现在，为了控制程序的执行流向，并且让这个Exp发挥作用，要做的第一件事儿就是计算出在50000个字符缓冲区中EIP所在的那个点（溢出位置）。我们可以通过反复尝试和产生错误，来构建不同的多字符的缓冲区 （如 10,000 每个 a，B 的、 C、 D、 和 E 的），看看最后到哪里EIP会被覆盖，如下所示。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/1aa2fa841bf40e453e9df244659e86f0.png" alt=""><br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/54971a26910deeafe5e273de095410cf.png" alt=""><br>EIP被C字符串覆盖了，所以我们能够定位在20001到30000之间这段。继续缩小分量，直到找到最小的4字节是覆盖EIP的准确位置。这种方法是会花费一些时间，但是确实是最容易且有效的寻找覆盖点的方法。替代上面这种方法，我们还能够找到确切的EIP覆盖点，使用Msf的 pattern<em>create/Pattern_offset功能（可以从Kali上找到）。<br><em>*root@kali:/# locate </em>pattern</em><em>.rb<br>/usr/share/metasploit-framework/tools/pattern_create.rb<br>/usr/share/metasploit-framework/tools/pattern_offset.rb<strong><br>使用pattern_create，我将创建按一个50000的模板，插入到我的脚本中来创建一个m3u溢出文件
+</strong>root@kali:/# /usr/share/metasploit-framework/tools/pattern_create.rb 50000<br>Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad…<br><strong><br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/68b626e9b6bdd859b396f1855e9fb88b.png" alt=""><br>在ImDbg中重新启动ASX to MP3 Converter（可以按ctrl + F2） ,打开你新创建的m3u文件（从C盘根目录）然后尝试使其发生崩溃。这个时候我们能准确定位到EIP的覆盖点是48376D48 。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/9b476538823cc14f1114043583504e1d.png" alt=""><br>在我们50000个字符串缓冲区中，要找到确切的EIP覆盖偏移地址，我们将使用 pattern_offset.rb，语法如下：
+</strong>root@kali:/# /usr/share/metasploit-framework/tools/pattern_offset.rb 0x48376D48 50000<strong><br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/629b31652f4c8424e6e956c4c4359465.png" alt=""><br>在这种情况下，实际的偏移地址在第二列表（26121），它和在Exp-DB发布的原POC相同。我们可以通过修改如下脚本来测试它：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/011039176d2c1ea50c87fe97d2797390.png" alt=""><br>在前面的脚本中，我添加了一个变量$junk，其值位26121个A —— 就是我们的EIP偏移地址。接下来4字节就会被EIP正确的覆盖（我这里选的是B），而其余填满缓冲区的我用的是C。重新运行这个有漏洞的程序，使用确定了EIP覆盖点的m3u溢出文件，就可以看到如希望的EIP被覆盖了4个B。你也可以看到我们缓冲区和内存面板的内容来对比：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/fe7c7c7de397d9778a2e2b98c393a8b4.png" alt=""><br>让我们看看其他的方式来构造一个模板，然后计算出偏移地址。这次使用Mona插件（<a href="http://redmine.corelan.be/projects/mona）。把这个插件保存在ImDbg的PyCommands目录就可以使用了，用调试器运行ASX" target="_blank" rel="external">http://redmine.corelan.be/projects/mona）。把这个插件保存在ImDbg的PyCommands目录就可以使用了，用调试器运行ASX</a> to MP3 converter。<br>如果你想看以下Mona来产生Msf的模板，你可以输入!mona pc 50000并且它将会把这些写到一个文本文件。由于我大多数Exp都是在一个分开的Kali机器上写的，我更喜欢用pattern_create.rb这个脚本。无论用哪种方式，只要你能够构造出你的包含50000个字节且能引起程序崩溃m3u文件都可以，现在你能用findmsp mona命令来这么玩了。输入这条命令（!mona findmsp）后，mona会定位到EIP的覆盖点，同时会给出其他一些有用的信息，比如寄存器中你的缓冲区位置。如果你之前运行了!mona findmsp命令，就会如下输出：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/fa5192f628f47eff31e7d7101a00a0a9.png" alt=""><br>注意它是如何找到一个EIP在偏移5841的模板的，其可能看起来很相像，因为它是。我早些时候展示的Msf rb 脚本找到的三个模式匹配项。这是因为开箱（out-of-the-box），mona.py的FindMsp功能使用python的find()函数找到偏移：
+</strong><pattern>offset = regpattern.find(hexpat)) </pattern>*</em><br>如果你熟悉Python，find函数只会返回第一个匹配的值，不是所有的匹配。在俺们的这块，我们更关注的第二次匹配到的，这样来确定正确的偏移位置。我更新了我的Mona副本使用正则表达式来代替Find函数，然后循环遍历整个匹配模式的所有偏移串联的匹配项。如果你感兴趣，基本的代码流程（虽然我应该提醒你这是Hack并需要更改一些其他的代码）</p>
+<p><em>match in re.finditer(hexpat, regpattern):<br>    if offsetstr != “”:<br>        divisor = “ and “<br>    offsetstr = offsetstr + divisor + match.start( )<br>    …<br>[be sure to edit dbg.log to write offsetstr as %s]</em></p>
+<p>以下将是Hack过的Mona输出信息：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/3cbbf3aa7e196f481bd5b257733f73f2.png" alt=""><br>现在你能看到已经返回所有实例的EIP了</p>
+<h2 id="定位ShellCode">定位ShellCode</h2><p>现在我们确定了可以控制EIP（改变执行流程）。我们已经准备好修改Exp脚本来使其执行我们所选择的代码了。为了重定向执行过程，我们需要确定我们的Shellcode被分配到正确位置，然后确定其EIP。要搞定它，我们得在程序崩溃和EIP覆盖时，检查CPU寄存器和内存中的内容。让我们回到ImDbg的CPU视图：<br>注意这里有3个寄存器，他们当前都指向一些位置，在我们这50000字节的缓冲区中：EBX、ESP和EBP<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/b9b60233ba8e30c298facdf5eb7442d6.png" alt=""><br>我们想让我的EIP覆盖，让程序重定向到这3个寄存器中的某一个值，来执行其指向的代码。我选择哪个寄存器依据如下几个原则：</p>
+<ol>
+<li></li>
+<li>dafadf</li>
+</ol>
 
         
       </div>
@@ -169,13 +184,11 @@
           <div class="post-nav">
             <div class="post-nav-prev post-nav-item">
               
-                <a href="/2015/03/19/windows-exp-dev-part1/">Windows Exploit Development —— 第一部分 基础</a>
-              
             </div>
 
             <div class="post-nav-next post-nav-item">
               
-                <a href="/2015/03/18/we-are-the-boar/">We are the BOAR !</a>
+                <a href="/2015/03/19/windows-exp-dev-part1/">Windows Exploit Development —— 第一部分 基础</a>
               
             </div>
           </div>
@@ -271,7 +284,7 @@
       <div class="post-toc-wrap sidebar-panel-active">
         <div class="post-toc-indicator-top post-toc-indicator"></div>
         <div class="post-toc">
-          
+          <ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Windows_漏洞利用程序开发之栈溢出"><span class="nav-number">1.</span> <span class="nav-text">Windows 漏洞利用程序开发之栈溢出</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#关于栈缓冲区溢出"><span class="nav-number">1.1.</span> <span class="nav-text">关于栈缓冲区溢出</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#找到有漏洞的程序"><span class="nav-number">1.2.</span> <span class="nav-text">找到有漏洞的程序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#复现漏洞/崩溃"><span class="nav-number">1.3.</span> <span class="nav-text">复现漏洞/崩溃</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#控制EIP的覆盖（确定偏移地址）"><span class="nav-number">1.4.</span> <span class="nav-text">控制EIP的覆盖（确定偏移地址）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#定位ShellCode"><span class="nav-number">1.5.</span> <span class="nav-text">定位ShellCode</span></a></li></ol></li></ol>
         </div>
         <div class="post-toc-indicator-bottom post-toc-indicator"></div>
       </div>
